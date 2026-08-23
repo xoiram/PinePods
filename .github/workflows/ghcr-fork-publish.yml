@@ -1,0 +1,112 @@
+name: "[fork] Publish image to GHCR"
+
+# Temporary, fork-only workflow: builds the main Pinepods image (dockerfile / dockerfile-arm)
+# and publishes it to this fork's GitHub Container Registry so the fix in this branch can be
+# pulled and tested end-to-end before drafting the upstream PR. Not meant to be merged upstream
+# — remove this file from the feature branch before opening the PR.
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches:
+      - main
+      - fix/episode-pagination-sort-filter-bug
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Manual override tag (optional; defaults to the branch name)"
+        required: false
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  set-env:
+    runs-on: ubuntu-latest
+    outputs:
+      IMAGE_TAG: ${{ steps.set_tags.outputs.IMAGE_TAG }}
+      IMAGE_NAME: ${{ steps.set_tags.outputs.IMAGE_NAME }}
+    steps:
+      - name: Compute image tag and lowercase image name
+        id: set_tags
+        run: |
+          RAW_TAG="${{ github.event.inputs.version }}"
+          if [ -z "$RAW_TAG" ]; then
+            RAW_TAG="${{ github.ref_name }}"
+          fi
+          # Docker tags can't contain '/' (branch names like fix/foo do).
+          echo "IMAGE_TAG=$(echo "$RAW_TAG" | tr '/' '-')" >> "$GITHUB_OUTPUT"
+          # GHCR requires a lowercase repository path.
+          echo "IMAGE_NAME=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+  build-and-push-x86:
+    needs: set-env
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Log in to GHCR
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push x86 image
+        run: |
+          docker build --platform linux/amd64 -t ${{ env.REGISTRY }}/${{ needs.set-env.outputs.IMAGE_NAME }}:${{ needs.set-env.outputs.IMAGE_TAG }}-amd64 -f dockerfile .
+          docker push ${{ env.REGISTRY }}/${{ needs.set-env.outputs.IMAGE_NAME }}:${{ needs.set-env.outputs.IMAGE_TAG }}-amd64
+
+  build-and-push-arm64:
+    needs: set-env
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Log in to GHCR
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push ARM64 image
+        run: |
+          docker build --platform linux/arm64 -t ${{ env.REGISTRY }}/${{ needs.set-env.outputs.IMAGE_NAME }}:${{ needs.set-env.outputs.IMAGE_TAG }}-arm64 -f dockerfile-arm .
+          docker push ${{ env.REGISTRY }}/${{ needs.set-env.outputs.IMAGE_NAME }}:${{ needs.set-env.outputs.IMAGE_TAG }}-arm64
+
+  create-manifest:
+    needs: [set-env, build-and-push-x86, build-and-push-arm64]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Log in to GHCR
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create and push multi-arch manifest
+        run: |
+          docker pull ${{ env.REGISTRY }}/${{ needs.set-env.outputs.IMAGE_NAME }}:${{ needs.set-env.outputs.IMAGE_TAG }}-amd64
+          docker pull ${{ env.REGISTRY }}/${{ needs.set-env.outputs.IMAGE_NAME }}:${{ needs.set-env.outputs.IMAGE_TAG }}-arm64
+          docker manifest create ${{ env.REGISTRY }}/${{ needs.set-env.outputs.IMAGE_NAME }}:${{ needs.set-env.outputs.IMAGE_TAG }} \
+            --amend ${{ env.REGISTRY }}/${{ needs.set-env.outputs.IMAGE_NAME }}:${{ needs.set-env.outputs.IMAGE_TAG }}-amd64 \
+            --amend ${{ env.REGISTRY }}/${{ needs.set-env.outputs.IMAGE_NAME }}:${{ needs.set-env.outputs.IMAGE_TAG }}-arm64
+          docker manifest push ${{ env.REGISTRY }}/${{ needs.set-env.outputs.IMAGE_NAME }}:${{ needs.set-env.outputs.IMAGE_TAG }}

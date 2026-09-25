@@ -14534,6 +14534,16 @@ fn pg_existing_from_row(row: &sqlx::postgres::PgRow) -> ExistingEp {
     }
 }
 
+/// "https://host/path" -> "host/path". None unless the URL has a scheme and a non-empty path,
+/// so a suffix match can never rest on a bare hostname.
+fn strip_url_scheme(url: &str) -> Option<&str> {
+    let (_, rest) = url.split_once("://")?;
+    match rest.split_once('/') {
+        Some((host, path)) if !host.is_empty() && !path.is_empty() => Some(rest),
+        _ => None,
+    }
+}
+
 fn mysql_existing_from_row(row: &sqlx::mysql::MySqlRow) -> ExistingEp {
     ExistingEp {
         guid: row.try_get::<Option<String>, _>("EpisodeGUID").ok().flatten(),
@@ -16923,7 +16933,7 @@ impl DatabasePool {
 
         // Log a sample of not-found URLs to help diagnose feed/episode URL mismatches
         if !not_found_urls.is_empty() {
-            tracing::debug!("{} episode actions referenced episodes not in the local database (showing up to 20): {:?}",
+            tracing::info!("{} episode actions referenced episodes not in the local database (showing up to 20): {:?}",
                           not_found_urls.len(), not_found_urls.iter().take(20).collect::<Vec<_>>());
         }
 
@@ -16932,6 +16942,13 @@ impl DatabasePool {
     
     // Find episode ID by URL for user
     async fn find_episode_by_url(&self, user_id: i32, episode_url: &str) -> AppResult<Option<i32>> {
+        if let Some(episode_id) = self.find_episode_by_exact_url(user_id, episode_url).await? {
+            return Ok(Some(episode_id));
+        }
+        self.find_episode_by_url_suffix(user_id, episode_url).await
+    }
+
+    async fn find_episode_by_exact_url(&self, user_id: i32, episode_url: &str) -> AppResult<Option<i32>> {
         match self {
             DatabasePool::Postgres(pool) => {
                 let row = sqlx::query(r#"
@@ -16963,6 +16980,79 @@ impl DatabasePool {
                     .fetch_optional(pool)
                     .await?;
                 
+                if let Some(row) = row {
+                    Ok(Some(row.try_get("EpisodeID")?))
+                } else {
+                    Ok(None)
+                }
+            }
+        }
+    }
+
+    // Match episodes whose URLs differ only by tracking-redirect prefixes, e.g. a stored
+    // https://pdst.fm/e/chrt.fm/track/X/serve.example.com/a.mp3 against an incoming
+    // https://serve.example.com/a.mp3 (or the other way around). Clients pick different URLs
+    // from the same feed item: AntennaPod uses the first of <media:content>/<enclosure>, while
+    // PinePods stores the <enclosure>. One URL, without its scheme, must end the other at a
+    // path boundary ("/").
+    async fn find_episode_by_url_suffix(&self, user_id: i32, episode_url: &str) -> AppResult<Option<i32>> {
+        let Some(bare_url) = strip_url_scheme(episode_url) else {
+            return Ok(None);
+        };
+        match self {
+            DatabasePool::Postgres(pool) => {
+                let row = sqlx::query(r#"
+                    SELECT e.episodeid
+                    FROM "Episodes" e
+                    JOIN "Podcasts" p ON e.podcastid = p.podcastid
+                    WHERE p.userid = $3
+                      AND (
+                        RIGHT(e.episodeurl, CHAR_LENGTH($1) + 1) = '/' || $1
+                        OR (
+                          POSITION('://' IN e.episodeurl) > 0
+                          AND RIGHT($2, CHAR_LENGTH(SUBSTR(e.episodeurl, POSITION('://' IN e.episodeurl) + 3)) + 1)
+                              = '/' || SUBSTR(e.episodeurl, POSITION('://' IN e.episodeurl) + 3)
+                        )
+                      )
+                    ORDER BY e.episodeid DESC
+                    LIMIT 1
+                "#)
+                    .bind(bare_url)
+                    .bind(episode_url)
+                    .bind(user_id)
+                    .fetch_optional(pool)
+                    .await?;
+
+                if let Some(row) = row {
+                    Ok(Some(row.try_get("episodeid")?))
+                } else {
+                    Ok(None)
+                }
+            }
+            DatabasePool::MySQL(pool) => {
+                let row = sqlx::query("
+                    SELECT e.EpisodeID
+                    FROM Episodes e
+                    JOIN Podcasts p ON e.PodcastID = p.PodcastID
+                    WHERE p.UserID = ?
+                      AND (
+                        RIGHT(e.EpisodeURL, CHAR_LENGTH(?) + 1) = CONCAT('/', ?)
+                        OR (
+                          LOCATE('://', e.EpisodeURL) > 0
+                          AND RIGHT(?, CHAR_LENGTH(SUBSTRING(e.EpisodeURL, LOCATE('://', e.EpisodeURL) + 3)) + 1)
+                              = CONCAT('/', SUBSTRING(e.EpisodeURL, LOCATE('://', e.EpisodeURL) + 3))
+                        )
+                      )
+                    ORDER BY e.EpisodeID DESC
+                    LIMIT 1
+                ")
+                    .bind(user_id)
+                    .bind(bare_url)
+                    .bind(bare_url)
+                    .bind(episode_url)
+                    .fetch_optional(pool)
+                    .await?;
+
                 if let Some(row) = row {
                     Ok(Some(row.try_get("EpisodeID")?))
                 } else {
@@ -31568,7 +31658,7 @@ mod episode_pagination_tests {
 
     /// Creates only the columns `return_podcast_episodes_capitalized` actually touches.
     /// `IF NOT EXISTS` so this is a no-op against an already fully-migrated DB.
-    async fn ensure_schema(pool: &Pool<Postgres>) {
+    pub(super) async fn ensure_schema(pool: &Pool<Postgres>) {
         let statements = [
             r#"CREATE TABLE IF NOT EXISTS "Users" (
                 userid SERIAL PRIMARY KEY,
@@ -31917,5 +32007,144 @@ mod episode_pagination_tests {
         );
 
         cleanup(&pool, user_id, podcast_id).await;
+    }
+}
+
+#[cfg(test)]
+mod strip_url_scheme_tests {
+    use super::strip_url_scheme;
+
+    #[test]
+    fn strips_scheme_and_keeps_host_and_path() {
+        assert_eq!(
+            strip_url_scheme("https://serve.castfire.com/audio/1/a.mp3?rssID=6348"),
+            Some("serve.castfire.com/audio/1/a.mp3?rssID=6348")
+        );
+        assert_eq!(strip_url_scheme("http://example.com/a.mp3"), Some("example.com/a.mp3"));
+    }
+
+    #[test]
+    fn rejects_urls_without_scheme_or_path() {
+        assert_eq!(strip_url_scheme("serve.castfire.com/audio/1/a.mp3"), None);
+        assert_eq!(strip_url_scheme("https://example.com"), None);
+        assert_eq!(strip_url_scheme("https://example.com/"), None);
+        assert_eq!(strip_url_scheme("https:///a.mp3"), None);
+    }
+}
+
+/// Coverage for `find_episode_by_url`'s fallback for URLs that differ only by tracking-redirect
+/// prefixes. The real case: a feed item lists the bare file in `<media:content>` before the
+/// prefixed one in `<enclosure>`; AntennaPod takes the first and PinePods stores the enclosure,
+/// so AntennaPod's gPodder episode actions never matched an episode and were dropped. Needs a
+/// real Postgres like `episode_pagination_tests`:
+///
+/// ```sh
+/// cargo test episode_url_matching -- --ignored --test-threads=1
+/// ```
+#[cfg(test)]
+mod episode_url_matching_tests {
+    use super::DatabasePool;
+    use sqlx::postgres::PgPoolOptions;
+    use sqlx::{Pool, Postgres};
+
+    const USER_ID: i32 = 910_001;
+    const OTHER_USER_ID: i32 = 910_002;
+    const PODCAST_ID: i32 = 910_001;
+    const OTHER_PODCAST_ID: i32 = 910_002;
+
+    const PREFIXED: &str = "https://pdst.fm/e/pscrb.fm/rss/p/tracking.swap.fm/track/abc/serve.castfire.com/audio/8238967/8238967.192.mp3?rssID=6348";
+    const BARE: &str = "https://serve.castfire.com/audio/8238967/8238967.192.mp3?rssID=6348";
+
+    async fn test_pool() -> Pool<Postgres> {
+        let host = std::env::var("DB_HOST").unwrap_or_else(|_| "localhost".into());
+        let port = std::env::var("DB_PORT").unwrap_or_else(|_| "5432".into());
+        let user = std::env::var("DB_USER").unwrap_or_else(|_| "test_user".into());
+        let password = std::env::var("DB_PASSWORD").unwrap_or_else(|_| "test_password".into());
+        let name = std::env::var("DB_NAME").unwrap_or_else(|_| "test_db".into());
+        let url = format!("postgres://{user}:{password}@{host}:{port}/{name}");
+        let pool = PgPoolOptions::new()
+            .max_connections(5)
+            .connect(&url)
+            .await
+            .unwrap_or_else(|e| panic!("connect to test Postgres at {host}:{port}/{name} failed: {e}"));
+        // Shared with episode_pagination_tests so either module can create the tables first.
+        super::episode_pagination_tests::ensure_schema(&pool).await;
+        pool
+    }
+
+    async fn reset(pool: &Pool<Postgres>, episodes: &[(i32, i32, &str)]) {
+        for podcast_id in [PODCAST_ID, OTHER_PODCAST_ID] {
+            let _ = sqlx::query(r#"DELETE FROM "Episodes" WHERE podcastid = $1"#).bind(podcast_id).execute(pool).await;
+            let _ = sqlx::query(r#"DELETE FROM "Podcasts" WHERE podcastid = $1"#).bind(podcast_id).execute(pool).await;
+        }
+        for (podcast_id, user_id) in [(PODCAST_ID, USER_ID), (OTHER_PODCAST_ID, OTHER_USER_ID)] {
+            sqlx::query(r#"INSERT INTO "Podcasts" (podcastid, userid) VALUES ($1, $2)"#)
+                .bind(podcast_id)
+                .bind(user_id)
+                .execute(pool)
+                .await
+                .unwrap_or_else(|e| panic!("insert test podcast failed: {e}"));
+        }
+        for &(episode_id, podcast_id, url) in episodes {
+            sqlx::query(r#"INSERT INTO "Episodes" (episodeid, podcastid, episodeurl) VALUES ($1, $2, $3)"#)
+                .bind(episode_id)
+                .bind(podcast_id)
+                .bind(url)
+                .execute(pool)
+                .await
+                .unwrap_or_else(|e| panic!("insert test episode failed: {e}"));
+        }
+    }
+
+    async fn find(pool: &Pool<Postgres>, user_id: i32, url: &str) -> Option<i32> {
+        DatabasePool::Postgres(pool.clone())
+            .find_episode_by_url(user_id, url)
+            .await
+            .unwrap_or_else(|e| panic!("find_episode_by_url failed: {e}"))
+    }
+
+    #[tokio::test]
+    #[ignore = "requires a live Postgres; see module docs"]
+    async fn matches_across_tracking_prefixes_in_both_directions() {
+        let pool = test_pool().await;
+
+        // Stored prefixed (the <enclosure>), client sends bare (the <media:content>).
+        reset(&pool, &[(910_001, PODCAST_ID, PREFIXED)]).await;
+        assert_eq!(find(&pool, USER_ID, BARE).await, Some(910_001));
+        assert_eq!(find(&pool, USER_ID, PREFIXED).await, Some(910_001));
+
+        // Stored bare, client sends prefixed.
+        reset(&pool, &[(910_001, PODCAST_ID, BARE)]).await;
+        assert_eq!(find(&pool, USER_ID, PREFIXED).await, Some(910_001));
+
+        reset(&pool, &[]).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires a live Postgres; see module docs"]
+    async fn prefers_exact_match_and_does_not_overmatch() {
+        let pool = test_pool().await;
+        reset(
+            &pool,
+            &[
+                (910_001, PODCAST_ID, PREFIXED),
+                (910_002, PODCAST_ID, BARE),
+                // Same file name on another host, and a path that only shares a partial segment.
+                (910_003, PODCAST_ID, "https://other.example/audio/8238967/8238967.192.mp3?rssID=6348"),
+                (910_004, PODCAST_ID, "https://cdn.example/xserve.castfire.com/audio/1/other.mp3"),
+                // Another user's copy of the same episode.
+                (910_005, OTHER_PODCAST_ID, PREFIXED),
+            ],
+        )
+        .await;
+
+        assert_eq!(find(&pool, USER_ID, BARE).await, Some(910_002), "exact match must win");
+        assert_eq!(find(&pool, USER_ID, PREFIXED).await, Some(910_001), "exact match must win");
+        assert_eq!(find(&pool, OTHER_USER_ID, BARE).await, Some(910_005), "scoped to the user");
+        assert_eq!(find(&pool, USER_ID, "https://castfire.com/audio/1/other.mp3").await, None,
+                   "suffix must start at a path boundary");
+        assert_eq!(find(&pool, USER_ID, "https://unknown.example/nope.mp3").await, None);
+
+        reset(&pool, &[]).await;
     }
 }

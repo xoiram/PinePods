@@ -8,6 +8,6 @@ dependencies:
     repository: https://charts.bitnami.com/bitnami
     condition: postgresql.enabled
   - name: valkey
-    version: 2.4.7
+    version: 6.3.12
     repository: https://charts.bitnami.com/bitnami
     condition: valkey.enabled

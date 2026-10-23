@@ -14,6 +14,8 @@
   // (there's no branch protection to make that wait for CI).
   automergeType: 'pr',
   platformAutomerge: false,
+  // The helm chart vendors its subcharts in charts/; keep them in step with Chart.lock.
+  postUpdateOptions: ['helmUpdateSubChartArchives'],
   // Dependabot alerts are off on the fork; OSV gives security PRs without them.
   osvVulnerabilityAlerts: true,
   // Weekly lockfile refresh: the way transitive crates (openssl,

@@ -673,7 +673,9 @@ func uploadEpisodeActions(database *db.Database) gin.HandlerFunc {
                         `
 					}
 
-					result, err := tx.Exec(updateHistoryQuery, action.Position, time.Unix(actionTimestamp, 0), userID, episodeID)
+					// ListenDate is a TIMESTAMP without a zone that the Rust API reads as UTC, so
+					// write UTC, not the container's local time (which would put it in the future).
+					result, err := tx.Exec(updateHistoryQuery, action.Position, time.Unix(actionTimestamp, 0).UTC(), userID, episodeID)
 
 					if err != nil {
 						log.Printf("[WARNING] uploadEpisodeActions: Error updating episode history: %v", err)
@@ -701,7 +703,7 @@ func uploadEpisodeActions(database *db.Database) gin.HandlerFunc {
                                 `
 							}
 
-							_, err = tx.Exec(insertHistoryQuery, userID, episodeID, action.Position, time.Unix(actionTimestamp, 0))
+							_, err = tx.Exec(insertHistoryQuery, userID, episodeID, action.Position, time.Unix(actionTimestamp, 0).UTC())
 
 							if err != nil {
 								log.Printf("[WARNING] uploadEpisodeActions: Error creating episode history: %v", err)

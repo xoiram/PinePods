@@ -1,6 +1,13 @@
 # Default values for pinepods.
 # This is a YAML-formatted file.
 
+## Bitnami subcharts (postgresql, valkey) refuse images other than their own
+## unless this is set; ours come from bitnamilegacy (Bitnami stopped publishing
+## free images in 2025, bitnami/charts#30850).
+global:
+  security:
+    allowInsecureImages: true
+
 ## Number of pinepods pods to run
 replicaCount: 1
 

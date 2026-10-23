@@ -1,0 +1,109 @@
+// Renovate, self-hosted in the d42-infra cluster (docs/runbooks/renovate.md
+// there). Fork-only, like ghcr-fork-publish.yml: leave it out of upstream PRs.
+// Minor and patch updates are grouped into one PR a day per part of the repo,
+// and those PR CI builds and tests (web, rust-api, gpodder-api, the Flutter
+// app's packages, GitHub Actions) automerge once it passes. Parts no PR
+// workflow builds are the same PRs, left to review. Majors, and minors of
+// 0.x versions (breaking by semver), are separate PRs.
+{
+  $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+  extends: ['config:recommended', ':dependencyDashboard'],
+  timezone: 'Europe/Oslo',
+  gitAuthor: 'Renovate <renovate@dot42.no>',
+  // Renovate merges the PR itself after CI is green, not GitHub's auto-merge
+  // (there's no branch protection to make that wait for CI).
+  automergeType: 'pr',
+  platformAutomerge: false,
+  // Dependabot alerts are off on the fork; OSV gives security PRs without them.
+  osvVulnerabilityAlerts: true,
+  // Weekly lockfile refresh: the way transitive crates (openssl,
+  // rustls-webpki, quinn-proto, ...) get their fixes.
+  lockFileMaintenance: {
+    enabled: true,
+    automerge: true,
+    schedule: ['before 6am on monday'],
+  },
+  packageRules: [
+    {
+      description: 'Minor and patch updates: grouped per part of the repo below, once a day, automerged once CI passes',
+      matchUpdateTypes: ['minor', 'patch'],
+      schedule: ['before 6am'],
+      automerge: true,
+    },
+    // Groups. Later rules win, so web/src-tauri comes after web.
+    {
+      matchUpdateTypes: ['minor', 'patch'],
+      matchFileNames: ['web/**'],
+      groupName: 'web (frontend) minor and patch',
+      groupSlug: 'web-minor-patch',
+    },
+    {
+      matchUpdateTypes: ['minor', 'patch'],
+      matchFileNames: ['rust-api/**'],
+      groupName: 'rust-api minor and patch',
+      groupSlug: 'rust-api-minor-patch',
+    },
+    {
+      matchUpdateTypes: ['minor', 'patch'],
+      matchFileNames: ['gpodder-api/**'],
+      groupName: 'gpodder-api minor and patch',
+      groupSlug: 'gpodder-api-minor-patch',
+    },
+    {
+      matchUpdateTypes: ['minor', 'patch'],
+      matchFileNames: ['mobile/**'],
+      groupName: 'mobile minor and patch',
+      groupSlug: 'mobile-minor-patch',
+    },
+    {
+      matchUpdateTypes: ['minor', 'patch'],
+      matchManagers: ['github-actions'],
+      groupName: 'GitHub Actions minor and patch',
+      groupSlug: 'github-actions-minor-patch',
+    },
+    // Not built by any PR workflow: grouped the same way, but reviewed.
+    {
+      matchUpdateTypes: ['minor', 'patch'],
+      matchFileNames: ['web/src-tauri/**'],
+      groupName: 'desktop (Tauri) minor and patch',
+      groupSlug: 'tauri-minor-patch',
+      automerge: false,
+    },
+    {
+      matchUpdateTypes: ['minor', 'patch'],
+      matchFileNames: ['pinepods-ai/**'],
+      groupName: 'pinepods-ai minor and patch',
+      groupSlug: 'pinepods-ai-minor-patch',
+      automerge: false,
+    },
+    {
+      matchUpdateTypes: ['minor', 'patch'],
+      matchFileNames: ['Backend/**'],
+      groupName: 'search backend minor and patch',
+      groupSlug: 'backend-minor-patch',
+      automerge: false,
+    },
+    {
+      description: 'Android and iOS build tooling: mobile-tests runs Flutter tests, not the native builds',
+      matchUpdateTypes: ['minor', 'patch'],
+      matchManagers: ['gradle', 'gradle-wrapper', 'cocoapods'],
+      groupName: 'mobile native build minor and patch',
+      groupSlug: 'mobile-native-minor-patch',
+      automerge: false,
+    },
+    {
+      matchUpdateTypes: ['minor', 'patch'],
+      matchFileNames: ['deployment/**'],
+      groupName: 'deployment (helm, compose) minor and patch',
+      groupSlug: 'deployment-minor-patch',
+      automerge: false,
+    },
+    {
+      description: '0.x: a minor is a breaking release, so its own PR, reviewed',
+      matchCurrentVersion: '/^[~^=v]?0\\./',
+      matchUpdateTypes: ['minor'],
+      groupName: null,
+      automerge: false,
+    },
+  ],
+}

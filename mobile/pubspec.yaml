@@ -14,7 +14,7 @@ dependencies:
   collection: ^1.18.0
   connectivity_plus: ^7.1.1
   crypto: ^3.0.7
-  cupertino_icons: ^1.0.9
+  cupertino_icons: ^2.0.0
   flutter_carplay: ^1.6.3
   device_info_plus: ^13.2.0
   extended_image: ^10.0.1

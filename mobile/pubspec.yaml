@@ -23,7 +23,7 @@ dependencies:
   # keys on dart.library.ffi, not the OS), so the 10.x line — which is pinned to
   # win32 ^5 — fails to compile against the win32 ^6 that every other plugin
   # requires. Staying on the 12 beta keeps a single, consistent win32 ^6.
-  file_picker: ^12.0.0-beta.7
+  file_picker: ^13.0.0
   flutter_dialogs: ^3.0.0
   flutter_downloader: ^1.11.8
   flutter_secure_storage: ^10.0.0-beta.4

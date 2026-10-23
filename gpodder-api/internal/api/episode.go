@@ -36,37 +36,10 @@ func getEpisodeActions(database *db.Database) gin.HandlerFunc {
 		// "desc" (newest first) is used by the statistics view to show the most recent actions.
 		orderDesc := c.Query("order") == "desc"
 
-		// Get device ID if provided
+		// The device parameter is accepted but not used as a filter: every client gets every
+		// device's actions, as opodsync does. Music Assistant always sends its own device ID,
+		// so a strict per-device filter would never show it progress from other devices.
 		var deviceID *int
-		if deviceName != "" {
-			var deviceIDInt int
-			var query string
-
-			if database.IsPostgreSQLDB() {
-				query = `
-					SELECT DeviceID FROM "GpodderDevices"
-					WHERE UserID = $1 AND DeviceName = $2 AND IsActive = true
-				`
-			} else {
-				query = `
-					SELECT DeviceID FROM GpodderDevices
-					WHERE UserID = ? AND DeviceName = ? AND IsActive = true
-				`
-			}
-
-			err := database.QueryRow(query, userID, deviceName).Scan(&deviceIDInt)
-
-			if err != nil {
-				if err != sql.ErrNoRows {
-					log.Printf("[ERROR] getEpisodeActions: Error getting device: %v", err)
-					c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get device"})
-					return
-				}
-				// Device not found is not fatal if querying by device
-			} else {
-				deviceID = &deviceIDInt
-			}
-		}
 
 		var since int64 = 0
 		if sinceStr != "" {

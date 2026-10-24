@@ -211,7 +211,12 @@ impl BackgroundScheduler {
 
         let now = Utc::now();
         // Seconds::Optional accepts both 5-field and 6-field (with seconds) cron expressions.
-        let parser = CronParser::builder().seconds(Seconds::Optional).build();
+        // sloppy_ranges keeps croner 3's `5/5`-style steps, which croner 4 rejects by
+        // default, so schedules saved before the upgrade still parse.
+        let parser = CronParser::builder()
+            .seconds(Seconds::Optional)
+            .sloppy_ranges(true)
+            .build();
 
         // Establish a baseline for any schedule that has never run, so we never fire a backlog
         // of missed backups the moment a schedule is first enabled.

@@ -50,7 +50,7 @@ COPY ./gpodder-api/internal ./internal
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o gpodder-api ./cmd/server/
 
 # Python builder stage for database setup
-FROM python:3.11-alpine AS python-builder
+FROM python:3.15-alpine AS python-builder
 WORKDIR /build
 
 # Install build dependencies for PyInstaller and MariaDB connector

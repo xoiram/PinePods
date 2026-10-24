@@ -1,9 +1,9 @@
 // Renovate, self-hosted in the d42-infra cluster (docs/runbooks/renovate.md
 // there). Fork-only, like ghcr-fork-publish.yml: leave it out of upstream PRs.
 // Minor and patch updates are grouped into one PR a day per part of the repo,
-// and those PR CI builds and tests (web, rust-api, gpodder-api, the Flutter
-// app's packages, GitHub Actions) automerge once it passes. Parts no PR
-// workflow builds are the same PRs, left to review. Majors, and minors of
+// and those PR CI builds and tests (web, rust-api, gpodder-api, GitHub
+// Actions) automerge once it passes. Parts no PR workflow builds are the same
+// PRs, left to review. Majors, and minors of
 // 0.x versions (breaking by semver), are separate PRs.
 {
   $schema: 'https://docs.renovatebot.com/renovate-schema.json',
@@ -26,6 +26,16 @@
     schedule: ['before 6am on monday'],
   },
   packageRules: [
+    {
+      description: "The Flutter app in mobile/: not maintained on the fork (the upstream app works against this server), its workflows are disabled",
+      matchFileNames: [
+        'mobile/**',
+        '.github/workflows/mobile-tests.yml',
+        '.github/workflows/build-android-flutter.yml',
+        '.github/workflows/build-ios-flutter.yml',
+      ],
+      enabled: false,
+    },
     {
       description: 'Minor and patch updates: grouped per part of the repo below, once a day, automerged once CI passes',
       matchUpdateTypes: ['minor', 'patch'],
@@ -50,12 +60,6 @@
       matchFileNames: ['gpodder-api/**'],
       groupName: 'gpodder-api minor and patch',
       groupSlug: 'gpodder-api-minor-patch',
-    },
-    {
-      matchUpdateTypes: ['minor', 'patch'],
-      matchFileNames: ['mobile/**'],
-      groupName: 'mobile minor and patch',
-      groupSlug: 'mobile-minor-patch',
     },
     {
       matchUpdateTypes: ['minor', 'patch'],
@@ -90,14 +94,6 @@
       matchFileNames: ['Backend/**'],
       groupName: 'search backend minor and patch',
       groupSlug: 'backend-minor-patch',
-      automerge: false,
-    },
-    {
-      description: 'Android and iOS build tooling: mobile-tests runs Flutter tests, not the native builds',
-      matchUpdateTypes: ['minor', 'patch'],
-      matchManagers: ['gradle', 'gradle-wrapper', 'cocoapods'],
-      groupName: 'mobile native build minor and patch',
-      groupSlug: 'mobile-native-minor-patch',
       automerge: false,
     },
     {

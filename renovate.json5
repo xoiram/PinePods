@@ -14,6 +14,9 @@
   // (there's no branch protection to make that wait for CI).
   automergeType: 'pr',
   platformAutomerge: false,
+  // config:recommended allows 2 new PRs an hour; with one daily window that
+  // left the web and rust-api groups waiting a day behind the rest.
+  prHourlyLimit: 0,
   // The helm chart vendors its subcharts in charts/; keep them in step with Chart.lock.
   postUpdateOptions: ['helmUpdateSubChartArchives'],
   // Dependabot alerts are off on the fork; OSV gives security PRs without them.
@@ -81,6 +84,18 @@
       groupName: 'pinepods-ai minor and patch',
       groupSlug: 'pinepods-ai-minor-patch',
       automerge: false,
+    },
+    {
+      description: 'pinepods-ai: faster-whisper passes av.open(metadata_errors=), which PyAV 19 removed',
+      matchFileNames: ['pinepods-ai/**'],
+      matchPackageNames: ['av'],
+      allowedVersions: '<19',
+    },
+    {
+      description: 'pinepods-ai: no ctranslate2, onnxruntime or av wheels for Python 3.15 yet; raise this when there are',
+      matchFileNames: ['pinepods-ai/Dockerfile'],
+      matchDepNames: ['python'],
+      allowedVersions: '<3.15',
     },
     {
       description: "pinepods-ai's Python: its own PR, as a new Python waits on wheels for faster-whisper's dependencies",

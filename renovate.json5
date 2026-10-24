@@ -79,6 +79,13 @@
       automerge: false,
     },
     {
+      description: "pinepods-ai's Python: its own PR, as a new Python waits on wheels for faster-whisper's dependencies",
+      matchFileNames: ['pinepods-ai/Dockerfile'],
+      matchDepNames: ['python'],
+      groupName: null,
+      automerge: false,
+    },
+    {
       matchUpdateTypes: ['minor', 'patch'],
       matchFileNames: ['Backend/**'],
       groupName: 'search backend minor and patch',

@@ -31,7 +31,7 @@ jobs:
           --health-retries=3
 
       valkey:
-        image: valkey/valkey:8-alpine
+        image: valkey/valkey:9-alpine
         ports:
           - 6379:6379
 
@@ -95,7 +95,7 @@ jobs:
                 - test_network
 
             valkey:
-              image: valkey/valkey:8-alpine
+              image: valkey/valkey:9-alpine
               networks:
                 - test_network
 
@@ -167,7 +167,7 @@ jobs:
                 - test_network
 
             valkey:
-              image: valkey/valkey:8-alpine
+              image: valkey/valkey:9-alpine
               networks:
                 - test_network
 
@@ -226,7 +226,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:15
+        image: postgres:18
         env:
           POSTGRES_PASSWORD: test_password_123!
           POSTGRES_DB: pinepods_test_db
@@ -239,7 +239,7 @@ jobs:
           --health-retries 5
 
       valkey:
-        image: valkey/valkey:8-alpine
+        image: valkey/valkey:9-alpine
         ports:
           - 6379:6379
 
@@ -302,7 +302,7 @@ jobs:
                 - test_network
 
             valkey:
-              image: valkey/valkey:8-alpine
+              image: valkey/valkey:9-alpine
               networks:
                 - test_network
 
@@ -367,7 +367,7 @@ jobs:
                 - test_network
 
             valkey:
-              image: valkey/valkey:8-alpine
+              image: valkey/valkey:9-alpine
               networks:
                 - test_network
 

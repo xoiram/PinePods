@@ -590,7 +590,8 @@ fn create_auth_headers(api_key: &str, api_secret: &str) -> Result<HeaderMap, Htt
 
     let mut hasher = Sha1::new();
     hasher.update(data_to_hash.as_bytes());
-    let sha_1 = format!("{:x}", hasher.finalize());
+    // sha1 0.11 output has no LowerHex; same lowercase hex as before.
+    let sha_1: String = hasher.finalize().iter().map(|b| format!("{:02x}", b)).collect();
 
     let mut headers = HeaderMap::new();
     headers.insert("X-Auth-Date", HeaderValue::from_str(&epoch_time).unwrap_or_else(|e| {

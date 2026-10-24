@@ -693,21 +693,21 @@ pub async fn verify_mfa_and_get_key(
     };
 
     // Verify MFA code - matches existing verify_mfa function EXACTLY
-    use totp_rs::{Algorithm, Secret, TOTP};
+    use totp_rs::{Algorithm, Builder, Secret};
     
-    let totp = TOTP::new(
-        Algorithm::SHA1,
-        6,
-        1, 
-        30,
-        Secret::Encoded(mfa_secret.clone()).to_bytes()
-            .map_err(|e| AppError::internal(&format!("Invalid MFA secret format: {}", e)))?,
-        Some("Pinepods".to_string()), // Matches existing function exactly
-        "login".to_string(),          // Matches existing function exactly
-    ).map_err(|e| AppError::internal(&format!("TOTP creation failed: {}", e)))?;
+    let totp = Builder::new()
+        .with_algorithm(Algorithm::SHA1)
+        .with_digits(6)
+        .with_skew(1)
+        .with_step_duration(30)
+        .with_secret(Secret::try_from_base32(&mfa_secret)
+            .map_err(|e| AppError::internal(&format!("Invalid MFA secret format: {}", e)))?)
+        .with_issuer(Some("Pinepods")) // Matches existing function exactly
+        .with_account_name("login")    // Matches existing function exactly
+        .build()
+        .map_err(|e| AppError::internal(&format!("TOTP creation failed: {}", e)))?;
 
-    let verified = totp.check_current(&request.mfa_code)
-        .map_err(|e| AppError::internal(&format!("TOTP verification failed: {}", e)))?;
+    let verified = totp.check_current(&request.mfa_code).is_some();
 
     if verified {
         // MFA verification successful - now safe to return API key

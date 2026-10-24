@@ -5039,20 +5039,21 @@ pub async fn verify_mfa(
     
     if let Some(secret_str) = secret {
         // Verify the TOTP code
-        use totp_rs::{Algorithm, TOTP, Secret};
+        use totp_rs::{Algorithm, Builder, Secret};
         
-        let totp = TOTP::new(
-            Algorithm::SHA1,
-            6,
-            1,
-            30,
-            Secret::Encoded(secret_str.clone()).to_bytes().unwrap(),
-            Some("Pinepods".to_string()),
-            "login".to_string(),
-        ).map_err(|e| AppError::internal(&format!("Failed to create TOTP: {}", e)))?;
+        let totp = Builder::new()
+            .with_algorithm(Algorithm::SHA1)
+            .with_digits(6)
+            .with_skew(1)
+            .with_step_duration(30)
+            .with_secret(Secret::try_from_base32(&secret_str)
+                .map_err(|e| AppError::internal(&format!("Invalid MFA secret format: {}", e)))?)
+            .with_issuer(Some("Pinepods"))
+            .with_account_name("login")
+            .build()
+            .map_err(|e| AppError::internal(&format!("Failed to create TOTP: {}", e)))?;
         
-        let is_valid = totp.check_current(&request.mfa_code)
-            .map_err(|e| AppError::internal(&format!("Failed to verify TOTP: {}", e)))?;
+        let is_valid = totp.check_current(&request.mfa_code).is_some();
         
         Ok(Json(serde_json::json!({ "verified": is_valid })))
     } else {

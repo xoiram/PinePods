@@ -14917,13 +14917,13 @@ impl DatabasePool {
 
     // Generate MFA secret with QR code - matches Python generate_mfa_secret function exactly
     pub async fn generate_mfa_secret(&self, user_id: i32) -> AppResult<(String, String)> {
-        use totp_rs::{Algorithm, Secret, TOTP};
+        use totp_rs::{Algorithm, Builder, Secret};
         use qrcode::QrCode;
 
         // Generate random base32 secret (matches Python random_base32())
         let secret = {
             let secret_bytes: [u8; 20] = rand::random(); // 160 bits = 32 base32 chars
-            Secret::Raw(secret_bytes.to_vec()).to_encoded().to_string()
+            Secret::from(secret_bytes).to_base32()
         };
         
         // Get user email for provisioning URI
@@ -14945,17 +14945,20 @@ impl DatabasePool {
         };
         
         // Create TOTP instance and provisioning URI
-        let totp = TOTP::new(
-            Algorithm::SHA1,
-            6,
-            1,
-            30,
-            Secret::Encoded(secret.clone()).to_bytes().unwrap(),
-            Some("Pinepods".to_string()),
-            email.clone(),
-        ).map_err(|e| AppError::internal(&format!("TOTP creation failed: {}", e)))?;
+        let totp = Builder::new()
+            .with_algorithm(Algorithm::SHA1)
+            .with_digits(6)
+            .with_skew(1)
+            .with_step_duration(30)
+            .with_secret(Secret::try_from_base32(&secret)
+                .map_err(|e| AppError::internal(&format!("Invalid MFA secret format: {}", e)))?)
+            .with_issuer(Some("Pinepods"))
+            .with_account_name(email.clone())
+            .build()
+            .map_err(|e| AppError::internal(&format!("TOTP creation failed: {}", e)))?;
         
-        let provisioning_uri = totp.get_url();
+        let provisioning_uri = totp.to_url()
+            .map_err(|e| AppError::internal(&format!("TOTP URL creation failed: {}", e)))?;
         
         // Generate QR code as SVG (matches Python qrcode generation)
         let qr_code = QrCode::new(&provisioning_uri)
@@ -14984,7 +14987,7 @@ impl DatabasePool {
     
     // Verify temporary MFA code - matches Python verify_temp_mfa function exactly  
     pub async fn verify_temp_mfa(&self, user_id: i32, mfa_code: &str) -> AppResult<bool> {
-        use totp_rs::{Algorithm, Secret, TOTP};
+        use totp_rs::{Algorithm, Builder, Secret};
         
         // Get temporary secret (in production this would be from Redis)
         let temp_key = format!("temp_mfa_{}", user_id);
@@ -14994,18 +14997,19 @@ impl DatabasePool {
         };
         
         // Create TOTP instance and verify code
-        let totp = TOTP::new(
-            Algorithm::SHA1,
-            6,
-            1,
-            30,
-            Secret::Encoded(secret.clone()).to_bytes().unwrap(),
-            Some("Pinepods".to_string()),
-            "verification".to_string(),
-        ).map_err(|e| AppError::internal(&format!("TOTP creation failed: {}", e)))?;
+        let totp = Builder::new()
+            .with_algorithm(Algorithm::SHA1)
+            .with_digits(6)
+            .with_skew(1)
+            .with_step_duration(30)
+            .with_secret(Secret::try_from_base32(&secret)
+                .map_err(|e| AppError::internal(&format!("Invalid MFA secret format: {}", e)))?)
+            .with_issuer(Some("Pinepods"))
+            .with_account_name("verification")
+            .build()
+            .map_err(|e| AppError::internal(&format!("TOTP creation failed: {}", e)))?;
         
-        let verified = totp.check_current(mfa_code)
-            .map_err(|e| AppError::internal(&format!("TOTP verification failed: {}", e)))?;
+        let verified = totp.check_current(mfa_code).is_some();
         
         if verified {
             // Save to permanent storage and remove from temp
@@ -17847,7 +17851,7 @@ impl DatabasePool {
         podcast_values.insert("userid".to_string(), user_id.to_string());
         podcast_values.insert("podcastname".to_string(), feed.title.as_ref().map(|t| t.content.clone()).unwrap_or_default());
         podcast_values.insert("description".to_string(), feed.description.as_ref().map(|d| d.content.clone()).unwrap_or_default());
-        podcast_values.insert("author".to_string(), feed.authors.first().map(|a| a.name.clone()).unwrap_or_default());
+        podcast_values.insert("author".to_string(), feed.authors.first().and_then(|a| a.name.clone()).unwrap_or_default());
         podcast_values.insert("websiteurl".to_string(), feed.links.first().map(|l| l.href.clone()).unwrap_or_default());
         podcast_values.insert("explicit".to_string(), "False".to_string()); // Default to False
         podcast_values.insert("episodecount".to_string(), feed.entries.len().to_string());

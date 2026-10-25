@@ -30,6 +30,14 @@
 
 ---
 
+## About this fork
+
+This is a fork of [PinePods](https://github.com/madeofpendletonwool/PinePods) with
+updates and fixes, including dependency upgrades. All credit for the original project
+goes to its author and contributors.
+
+---
+
 ## What is PinePods?
 
 **PinePods is a complete, self-hosted podcast management system written in Rust.**

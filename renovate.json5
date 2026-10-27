@@ -1,6 +1,6 @@
 // Renovate, self-hosted in the d42-infra cluster (docs/runbooks/renovate.md
 // there). Fork-only, like ghcr-fork-publish.yml: leave it out of upstream PRs.
-// Minor and patch updates are grouped into one PR a day per part of the repo,
+// Minor and patch updates are grouped into two PRs a day (built parts, unbuilt),
 // and those PR CI builds and tests (web, rust-api, gpodder-api, GitHub
 // Actions) automerge once it passes. Parts no PR workflow builds are the same
 // PRs, left to review. Majors, and minors of
@@ -45,44 +45,20 @@
       schedule: ['before 6am'],
       automerge: true,
     },
-    // Groups. Later rules win, so web/src-tauri comes after web.
+    // Two groups, so one PR's CI run covers every built part at once. A failing
+    // part holds the whole group back, which is the price of one run a day.
     {
       matchUpdateTypes: ['minor', 'patch'],
-      matchFileNames: ['web/**'],
-      groupName: 'web (frontend) minor and patch',
-      groupSlug: 'web-minor-patch',
-    },
-    {
-      matchUpdateTypes: ['minor', 'patch'],
-      matchFileNames: ['rust-api/**'],
-      groupName: 'rust-api minor and patch',
-      groupSlug: 'rust-api-minor-patch',
-    },
-    {
-      matchUpdateTypes: ['minor', 'patch'],
-      matchFileNames: ['gpodder-api/**'],
-      groupName: 'gpodder-api minor and patch',
-      groupSlug: 'gpodder-api-minor-patch',
-    },
-    {
-      matchUpdateTypes: ['minor', 'patch'],
-      matchManagers: ['github-actions'],
-      groupName: 'GitHub Actions minor and patch',
-      groupSlug: 'github-actions-minor-patch',
+      matchFileNames: ['web/**', 'rust-api/**', 'gpodder-api/**', '.github/workflows/**'],
+      groupName: 'built parts minor and patch',
+      groupSlug: 'built-minor-patch',
     },
     // Not built by any PR workflow: grouped the same way, but reviewed.
     {
       matchUpdateTypes: ['minor', 'patch'],
-      matchFileNames: ['web/src-tauri/**'],
-      groupName: 'desktop (Tauri) minor and patch',
-      groupSlug: 'tauri-minor-patch',
-      automerge: false,
-    },
-    {
-      matchUpdateTypes: ['minor', 'patch'],
-      matchFileNames: ['pinepods-ai/**'],
-      groupName: 'pinepods-ai minor and patch',
-      groupSlug: 'pinepods-ai-minor-patch',
+      matchFileNames: ['web/src-tauri/**', 'pinepods-ai/**', 'Backend/**', 'deployment/**'],
+      groupName: 'unbuilt parts minor and patch',
+      groupSlug: 'unbuilt-minor-patch',
       automerge: false,
     },
     {

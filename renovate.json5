@@ -1,14 +1,18 @@
 // Renovate, self-hosted in the d42-infra cluster (docs/runbooks/renovate.md
 // there). Fork-only, like ghcr-fork-publish.yml: leave it out of upstream PRs.
-// Minor and patch updates are grouped into two PRs a day (built parts, unbuilt),
-// and those PR CI builds and tests (web, rust-api, gpodder-api, GitHub
-// Actions) automerge once it passes. Parts no PR workflow builds are the same
-// PRs, left to review. Majors, and minors of
-// 0.x versions (breaking by semver), are separate PRs.
+// Everything runs once a week, early Monday; security fixes (OSV) come
+// right away. Minor and patch updates are grouped into two PRs (built parts,
+// unbuilt): the one PR CI builds and tests (web, rust-api, gpodder-api, GitHub
+// Actions) automerges once it passes; the parts no PR workflow builds are one
+// PR to review. Minors of 0.x versions (breaking by semver) are one more
+// reviewed PR; majors are separate PRs.
 {
   $schema: 'https://docs.renovatebot.com/renovate-schema.json',
   extends: ['config:recommended', ':dependencyDashboard'],
   timezone: 'Europe/Oslo',
+  // Weekly, not daily: one batch of PRs to look at. Security PRs ignore this
+  // (vulnerabilityAlerts has its own, empty schedule).
+  schedule: ['before 6am on monday'],
   // Conventional commits ("chore(deps): update ...").
   semanticCommits: 'enabled',
   gitAuthor: 'Renovate <renovate@dot42.no>',
@@ -16,8 +20,8 @@
   // (there's no branch protection to make that wait for CI).
   automergeType: 'pr',
   platformAutomerge: false,
-  // config:recommended allows 2 new PRs an hour; with one daily window that
-  // left the web and rust-api groups waiting a day behind the rest.
+  // config:recommended allows 2 new PRs an hour; with one window a week that
+  // would leave groups waiting a week behind the rest.
   prHourlyLimit: 0,
   // The helm chart vendors its subcharts in charts/; keep them in step with Chart.lock.
   postUpdateOptions: ['helmUpdateSubChartArchives'],
@@ -42,20 +46,20 @@
       enabled: false,
     },
     {
-      description: 'Minor and patch updates: grouped per part of the repo below, once a day, automerged once CI passes',
+      description: 'Minor and patch updates: grouped per part of the repo below, automerged once CI passes',
       matchUpdateTypes: ['minor', 'patch'],
-      schedule: ['before 6am'],
       automerge: true,
     },
     // Two groups, so one PR's CI run covers every built part at once. A failing
-    // part holds the whole group back, which is the price of one run a day.
+    // part holds the whole group back, which is the price of one run a week.
     {
       matchUpdateTypes: ['minor', 'patch'],
       matchFileNames: ['web/**', 'rust-api/**', 'gpodder-api/**', '.github/workflows/**'],
       groupName: 'built parts minor and patch',
       groupSlug: 'built-minor-patch',
     },
-    // Not built by any PR workflow: grouped the same way, but reviewed.
+    // Not built by any PR workflow (desktop app, AI, search backend, helm and
+    // compose): one PR, reviewed.
     {
       matchUpdateTypes: ['minor', 'patch'],
       matchFileNames: ['web/src-tauri/**', 'pinepods-ai/**', 'Backend/**', 'deployment/**'],
@@ -83,24 +87,11 @@
       automerge: false,
     },
     {
-      matchUpdateTypes: ['minor', 'patch'],
-      matchFileNames: ['Backend/**'],
-      groupName: 'search backend minor and patch',
-      groupSlug: 'backend-minor-patch',
-      automerge: false,
-    },
-    {
-      matchUpdateTypes: ['minor', 'patch'],
-      matchFileNames: ['deployment/**'],
-      groupName: 'deployment (helm, compose) minor and patch',
-      groupSlug: 'deployment-minor-patch',
-      automerge: false,
-    },
-    {
-      description: '0.x: a minor is a breaking release, so its own PR, reviewed',
+      description: '0.x: a minor is a breaking release, so reviewed; all of them in one PR across the repo',
       matchCurrentVersion: '/^[~^=v]?0\\./',
       matchUpdateTypes: ['minor'],
-      groupName: null,
+      groupName: '0.x minor (breaking)',
+      groupSlug: '0x-minor',
       automerge: false,
     },
   ],

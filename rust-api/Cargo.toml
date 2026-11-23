@@ -55,7 +55,7 @@ rand = "0.10.1"
 
 # MFA/TOTP Support
 totp-rs = { version = "6.0.0", features = ["otpauth"] }
-qrcode = "0.14.1"
+qrcode = "0.15.0"
 image = "0.25.10"
 
 # Encryption for sync credentials
